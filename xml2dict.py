@@ -54,6 +54,9 @@ def hasbit(word):
     return (bf[(h / 8) % BloomFilterSize] & (1 << (h % 8))) != 0
 
 def add(word, freq, flags):
+    # Remove trailing 's
+    if word.endswith("'s"):
+        word = word[:-2]
     # add to the vocabulary
     vocabulary.append([word, freq, flags])
     # add prefixes to the index
