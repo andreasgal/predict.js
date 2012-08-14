@@ -59,10 +59,11 @@ def add(word, freq, flags):
     # add prefixes to the index
     prefix = word[0:min(len(word), 6)]
     setbit(prefix)
+    short = word[len(prefix):]
     if not prefix in index:
-        index[prefix] = word + "/" + str(freq)
+        index[prefix] = short + "/" + str(freq)
     else:
-        index[prefix] = index[prefix] + ":" + word + "/" + str(freq)
+        index[prefix] = index[prefix] + ":" + short + "/" + str(freq)
 
 # go through the dictionary and build the trie
 dom = parseString(data)

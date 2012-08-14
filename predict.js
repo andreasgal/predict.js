@@ -93,7 +93,7 @@ function Check(input, candidates) {
         if (result) {
             result = result.split(':');
             for (var n = 0; n < result.length; ++n)
-                candidates.push(result[n]);
+                candidates.push(prefix + result[n]);
         }
     }
 }
