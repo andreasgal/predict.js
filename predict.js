@@ -9,8 +9,8 @@ var IsPrefix = (function () {
     var mask = len - 1;
     return (function (hash) {
         var offset = hash >> 3;
-	var bit = hash & 7;
-	return !!(bf[offset & mask] & (1 << bit));
+        var bit = hash & 7;
+        return !!(bf[offset & mask] & (1 << bit));
     });
 })();
 
@@ -18,12 +18,12 @@ var IsPrefix = (function () {
 // and convert all umlauts into the base character.
 const ToKey = (function () {
     const mapping = {
-	"é": "e"
+        "é": "e"
     };
     return (function (ch) {
-	ch = ch.toLowerCase();
-	var ch2 = mapping[ch];
-	return (ch2 ? ch2 : ch).charCodeAt(0);
+        ch = ch.toLowerCase();
+        var ch2 = mapping[ch];
+        return (ch2 ? ch2 : ch).charCodeAt(0);
     });
 })();
 
@@ -61,7 +61,7 @@ const NearbyKeys = {
 var AllKeys = (function () {
     var s = "";
     for (i in NearbyKeys)
-	s += i;
+        s += i;
     return s;
 })();
 
@@ -69,7 +69,7 @@ var AllKeys = (function () {
 function String2Codes(word) {
     var codes = new Uint8Array(word.length);
     for (var n = 0; n < codes.length; ++n)
-	codes[n] = ToKey(word[n]);
+        codes[n] = ToKey(word[n]);
     return codes;
 }
 
@@ -77,24 +77,24 @@ function String2Codes(word) {
 function Codes2String(codes) {
     var s = "";
     for (var n = 0; n < codes.length; ++n)
-	s += String.fromCharCode(codes[n]);
+        s += String.fromCharCode(codes[n]);
     return s;
 }
 
 function Check(input, candidates) {
     var h = 0xcc9e2d51;
     for (var n = 0; n < input.length; ++n) {
-	h = ((h<<5)-h) + input[n];
-	h = h & h;
+        h = ((h<<5)-h) + input[n];
+        h = h & h;
     }
     if (IsPrefix(h)) {
-	var prefix = Codes2String(input);
-	var result = dict[prefix];
-	if (result) {
-	    result = result.split(':');
-	    for (var n = 0; n < result.length; ++n)
-		candidates.push(result[n]);
-	}
+        var prefix = Codes2String(input);
+        var result = dict[prefix];
+        if (result) {
+            result = result.split(':');
+            for (var n = 0; n < result.length; ++n)
+                candidates.push(result[n]);
+        }
     }
 }
 
@@ -102,13 +102,13 @@ function Check(input, candidates) {
 function EditDistance1(input, candidates) {
     var length = input.length;
     for (var n = 0; n < length; ++n) {
-	var key = input[n];
-	var nearby = NearbyKeys[String.fromCharCode(key)];
-	for (var i = 0; i < nearby.length; ++i) {
-	    input[n] = nearby[i].charCodeAt(0);
-	    Check(input, candidates);
-	}
-	input[n] = key;
+        var key = input[n];
+        var nearby = NearbyKeys[String.fromCharCode(key)];
+        for (var i = 0; i < nearby.length; ++i) {
+            input[n] = nearby[i].charCodeAt(0);
+            Check(input, candidates);
+        }
+        input[n] = key;
     }
 }
 
@@ -116,25 +116,25 @@ function EditDistance1(input, candidates) {
 function EditDistance2(input, candidates) {
     var length = input.length;
     if (length < 4)
-	return;
+        return;
     for (var n = 0; n < length; ++n) {
-	for (var m = 1; m < length; ++m) {
-	    if (n == m)
-		continue;
-	    var key1 = input[n];
-	    var key2 = input[m];
-	    var nearby1 = NearbyKeys[String.fromCharCode(key1)];
-	    var nearby2 = NearbyKeys[String.fromCharCode(key2)];
-	    for (var i = 0; i < nearby1.length; ++i) {
-		for (var j = 0; j < nearby2.length; ++j) {
-		    input[n] = nearby1[i].charCodeAt(0);
-		    input[m] = nearby2[j].charCodeAt(0);
-		    Check(input, candidates);
-		}
-	    }
-	    input[n] = key1;
-	    input[m] = key2;
-	}
+        for (var m = 1; m < length; ++m) {
+            if (n == m)
+                continue;
+            var key1 = input[n];
+            var key2 = input[m];
+            var nearby1 = NearbyKeys[String.fromCharCode(key1)];
+            var nearby2 = NearbyKeys[String.fromCharCode(key2)];
+            for (var i = 0; i < nearby1.length; ++i) {
+                for (var j = 0; j < nearby2.length; ++j) {
+                    input[n] = nearby1[i].charCodeAt(0);
+                    input[m] = nearby2[j].charCodeAt(0);
+                    Check(input, candidates);
+                }
+            }
+            input[n] = key1;
+            input[m] = key2;
+        }
     }
 }
 
@@ -143,14 +143,14 @@ function Omission1Candidates(input, candidates) {
     var length = Math.min(input.length, PrefixLimit - 1);
     var input2 = Uint8Array(length + 1);
     for (var n = 1; n <= length; ++n) {
-	for (var i = 0; i < n; ++i)
-	    input2[i] = input[i];
-	while (i < length)
-	    input2[i+1] = input[i++];
-	for (i = 0; i < AllKeys.length; ++i) {
-	    input2[n] = AllKeys[i].charCodeAt(0);
-	    Check(input2, candidates);
-	}
+        for (var i = 0; i < n; ++i)
+            input2[i] = input[i];
+        while (i < length)
+            input2[i+1] = input[i++];
+        for (i = 0; i < AllKeys.length; ++i) {
+            input2[n] = AllKeys[i].charCodeAt(0);
+            Check(input2, candidates);
+        }
     }
 }
 
@@ -159,12 +159,12 @@ function Deletion1Candidates(input, candidates) {
     var length = input.length;
     var input2 = Uint8Array(length - 1);
     for (var n = 1; n < length; ++n) {
-	for (var i = 0; i < n; ++i)
-	    input2[i] = input[i];
-	++i;
-	while (i < length)
-	    input2[i-1] = input[i++];
-	Check(input2, candidates);
+        for (var i = 0; i < n; ++i)
+            input2[i] = input[i];
+        ++i;
+        while (i < length)
+            input2[i-1] = input[i++];
+        Check(input2, candidates);
     }
 }
 
@@ -172,31 +172,31 @@ var LevenshteinDistance = (function () {
     var matrix = [];
 
     return function(a, b) {
-	if (a.length == 0) return b.length;
-	if (b.length == 0) return a.length;
+        if (a.length == 0) return b.length;
+        if (b.length == 0) return a.length;
 
-	// increment along the first column of each row
-	for (var i = 0; i <= b.length; i++)
-	    matrix[i] = [i];
+        // increment along the first column of each row
+        for (var i = 0; i <= b.length; i++)
+            matrix[i] = [i];
 
-	// increment each column in the first row
-	for (var j = 0; j <= a.length; j++)
-	    matrix[0][j] = j;
+        // increment each column in the first row
+        for (var j = 0; j <= a.length; j++)
+            matrix[0][j] = j;
 
-	// Fill in the rest of the matrix
-	for (i = 1; i <= b.length; i++){
-	    for (j = 1; j <= a.length; j++){
-		if (b.charAt(i-1) == a.charAt(j-1)) {
-		    matrix[i][j] = matrix[i-1][j-1];
-		} else {
-		    matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, // substitution
-					    Math.min(matrix[i][j-1] + 1, // insertion
-						     matrix[i-1][j] + 1)); // deletion
-		}
-	    }
-	}
+        // Fill in the rest of the matrix
+        for (i = 1; i <= b.length; i++){
+            for (j = 1; j <= a.length; j++){
+                if (b.charAt(i-1) == a.charAt(j-1)) {
+                    matrix[i][j] = matrix[i-1][j-1];
+                } else {
+                    matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, // substitution
+                                            Math.min(matrix[i][j-1] + 1, // insertion
+                                                     matrix[i-1][j] + 1)); // deletion
+                }
+            }
+        }
 
-	return matrix[b.length][a.length];
+        return matrix[b.length][a.length];
     };
 })();
 
@@ -219,17 +219,17 @@ function AutoCorrect(word) {
     var frequency = 0;
     var result = word;
     for (var n = 0; n < candidates.length; ++n) {
-	var candidate = candidates[n].split('/');
-	var candidate_word = candidate[0];
-	var candidate_freq = candidate[1];
-	// Calculate the distance of the word that was entered so far to the
-	// same number of letters from the candidate.
-	distance = LevenshteinDistance(word, candidate_word.substr(0, word.length));
-	if (distance <= minimum && (distance < minimum || candidate_freq > frequency)) {
-	    minimum = distance;
-	    frequency = candidate_freq;
-	    result = candidate_word;
-	}
+        var candidate = candidates[n].split('/');
+        var candidate_word = candidate[0];
+        var candidate_freq = candidate[1];
+        // Calculate the distance of the word that was entered so far to the
+        // same number of letters from the candidate.
+        distance = LevenshteinDistance(word, candidate_word.substr(0, word.length));
+        if (distance <= minimum && (distance < minimum || candidate_freq > frequency)) {
+            minimum = distance;
+            frequency = candidate_freq;
+            result = candidate_word;
+        }
     }
     return result;
 }
