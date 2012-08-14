@@ -94,8 +94,10 @@ f.close()
 
 # Write the index to disk
 output = StringIO()
+output.write('{\n')
 for key, word in index.iteritems():
-    output.write(key + " " + word + "\n")
+    output.write('"' + key + '": "' + word + '",\n')
+output.write('}\n')
 print("index size: {0} words, {1} bytes".format(len(index), output.tell()))
 output.seek(0)
 f = open(options.dict + ".i", "w")

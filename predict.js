@@ -1,4 +1,4 @@
-load("index.js");
+eval('var dict = ' + snarf("en_us.i"));
 
 // We index at most the first 6 characters.
 var PrefixLimit = 6;
@@ -89,7 +89,7 @@ function Check(input, candidates) {
     }
     if (IsPrefix(h)) {
 	var prefix = Codes2String(input);
-	var result = dict.index[prefix];
+	var result = dict[prefix];
 	if (result) {
 	    result = result.split(':');
 	    for (var n = 0; n < result.length; ++n)
