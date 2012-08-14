@@ -54,6 +54,7 @@ def hasbit(word):
     return (bf[(h / 8) % BloomFilterSize] & (1 << (h % 8))) != 0
 
 def add(word, freq, flags):
+    if freq <= 1: return # ignore extremely infrequent words
     # Remove trailing 's
     if word.endswith("'s"):
         word = word[:-2]
