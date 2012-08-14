@@ -236,6 +236,6 @@ function AutoCorrect(word) {
 
 var t = Date.now();
 for (var n = 0; n < 100; ++n)
-    var result = AutoCorrect("accred");
+    var result = AutoCorrect(arguments[0] || "accred");
 print((Date.now() - t) / 100 + " ms");
 print(result);
