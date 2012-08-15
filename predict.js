@@ -205,12 +205,6 @@ function AutoCorrect(word) {
     var candidates = [];
     // Limit search by prefix to avoid long lookup times.
     var prefix = word.substr(0, PrefixLimit);
-    // Remove trailing 's, and add it back at the end
-    var post = '';
-    if (prefix[prefix.length-2] == "'" && prefix[prefix.length-1] == "s") {
-        prefix = prefix.substr(0, prefix.length-2);
-        post = "'s";
-    }
     // Check for the current input, edit distance 1 and 2 and single letter
     // omission and deletion in the prefix.
     var input = String2Codes(prefix);
@@ -237,7 +231,7 @@ function AutoCorrect(word) {
             result = candidate_word;
         }
     }
-    return result + post;
+    return result;
 }
 
 var t = Date.now();

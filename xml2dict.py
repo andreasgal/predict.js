@@ -55,9 +55,6 @@ def hasbit(word):
 
 def add(word, freq, flags):
     if freq <= 1: return # ignore extremely infrequent words
-    # Remove trailing 's
-    if word.endswith("'s"):
-        word = word[:-2]
     # add to the vocabulary
     vocabulary.append([word, freq, flags])
     # add prefixes to the index
@@ -67,7 +64,7 @@ def add(word, freq, flags):
     if not prefix in index:
         index[prefix] = {}
     if short in index[prefix]:
-      index[prefix][short] += freq # combines X with X's and so forth
+      index[prefix][short] += freq # combines entries if we processed word into something simpler
     else:
       index[prefix][short] = freq
 
