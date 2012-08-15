@@ -65,9 +65,11 @@ def add(word, freq, flags):
     setbit(prefix)
     short = word[len(prefix):]
     if not prefix in index:
-        index[prefix] = short + "/" + str(freq)
+        index[prefix] = {}
+    if short in index[prefix]:
+      index[prefix][short] += freq # combines X with X's and so forth
     else:
-        index[prefix] = index[prefix] + ":" + short + "/" + str(freq)
+      index[prefix][short] = freq
 
 # go through the dictionary and build the trie
 dom = parseString(data)
@@ -101,7 +103,7 @@ f.close()
 output = StringIO()
 output.write('{\n')
 for key, word in index.iteritems():
-    output.write('"' + key + '": "' + word + '",\n')
+    output.write('"' + key + '": "' + ':'.join([short + '/' + str(word[short]) for short in word]) + '",\n')
 output.write('}\n')
 print("index size: {0} words, {1} bytes".format(len(index), output.tell()))
 output.seek(0)
