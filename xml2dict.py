@@ -3,6 +3,7 @@ from optparse import OptionParser
 from xml.dom.minidom import parseString
 from io import BytesIO
 from StringIO import StringIO
+from collections import defaultdict
 import sys, struct, operator, heapq
 
 # parse command line arguments
@@ -25,10 +26,10 @@ file = open(args[0])
 data = file.read()
 file.close()
 
-# the symbols with frequency counts
+# the alphabet with frequency counts
+symbol_freq = defaultdict(int)
 EndOfWord = '*'
 EndOfPrefix = '#'
-symbols = {EndOfWord: 0, EndOfPrefix: 0}
 
 # the vocabulary
 vocabulary = []
@@ -64,11 +65,8 @@ def add(word, freq, flags):
         return
     # count the symbol frequency
     for ch in word:
-        if ch in symbols:
-            symbols[ch] += 1
-        else:
-            symbols[ch] = 1
-    symbols[EndOfWord] += 1
+        symbol_freq[ch] += 1
+    symbol_freq[EndOfWord] += 1
     # add to the vocabulary
     vocabulary.append([word, freq, flags])
     # add prefixes to the index
@@ -77,7 +75,7 @@ def add(word, freq, flags):
     short = word[len(prefix):]
     if not prefix in index:
         index[prefix] = {}
-        symbols[EndOfPrefix] += 1
+        symbol_freq[EndOfPrefix] += 1
     if short in index[prefix]:
       index[prefix][short] += freq # combines entries if we processed word into something simpler
     else:
@@ -169,7 +167,7 @@ def buildTrie():
     return root
 
 # Create the huffman code table we will use to compress words
-codes = buildHuffmanTable(symbols)
+codes = buildHuffmanTable(symbol_freq)
 
 bitstring = StringIO()
 def encodeString(output, s):
@@ -199,7 +197,7 @@ def emitTrie(output, trie):
         if not len(ch) == 1:
             continue
         s += ch
-    # Huffman compress the string of symbols for each child node.
+    # Huffman compress the prefix character for each child node.
     encodeString(output, s)
     flushByte(output)
     # All offsets are relative to the end of the symbol string, which
