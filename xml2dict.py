@@ -178,18 +178,29 @@ def asBitString(i):
     return bin(i).lstrip('0b')
 def encodeByte(output, b):
     output.write(asBitString(b).zfill(8))
-def encodeShort(output, s):
+def encodeRawShort(output, s):
     encodeByte(output, (s >> 8) & 0xff)
     encodeByte(output, s & 0xff)
-def encodeOffset(output, offset):
-    if offset > 255:
+def encodeShort(output, s):
+    if s > 255:
         encodeByte(output, 255)
-        encodeShort(output, offset)
+        encodeRawShort(output, s)
     else:
-        encodeByte(output, offset)
+        encodeByte(output, s)
+def encodeOffset(output, offset):
+    encodeShort(output, offset)
 def flushByte(output):
     while not output.tell() % 8 == 0:
         output.write("0")
+
+# Emit the huffman table
+def emitHuffmanTable(output, codes):
+    encodeShort(output, len(codes))
+    for ch, code in codes.iteritems():
+        encodeShort(output, ord(ch))
+        encodeByte(output, len(code))
+    for ch, code in codes.iteritems():
+        output.write(code)
 
 # Emit the trie, compressing the symbol index
 def emitTrie(output, trie):
@@ -245,6 +256,7 @@ trie = buildTrie()
 # Emit the trie until the offsets stabilize.
 while True:
     bitstring = StringIO()
+    emitHuffmanTable(bitstring, codes)
     if emitTrie(bitstring, trie) == 0:
         break
 
