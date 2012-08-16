@@ -60,9 +60,6 @@ def hasbit(word):
     return (bf[(h / 8) % BloomFilterSize] & (1 << (h % 8))) != 0
 
 def add(word, freq, flags):
-    # ignore extremely infrequent words
-    if freq <= 1:
-        return
     # count the symbol frequency
     for ch in word:
         symbol_freq[ch] += 1
