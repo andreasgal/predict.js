@@ -186,6 +186,8 @@ def encodeShort(output, s):
         encodeByte(output, s)
 def encodeOffset(output, offset):
     encodeShort(output, offset)
+def encodeChar(output, ch):
+    encodeShort(output, ord(ch))
 def flushByte(output):
     while not output.tell() % 8 == 0:
         output.write("0")
@@ -203,19 +205,11 @@ def emitHuffmanTable(output, codes):
 def emitTrie(output, trie):
     fixup = 0
     s = ""
-    for ch in trie:
-        if not len(ch) == 1:
-            continue
-        s += ch
-    # Huffman compress the prefix character for each child node.
-    encodeString(output, s)
-    flushByte(output)
-    # All offsets are relative to the end of the symbol string, which
-    # is followed by the offset table itself.
+    # All offsets are relative to the beginning of the prefix/offset table.
     start = output.tell() / 8
-    # Now emit the offset from the last iteration of calling emitTrie.
-    # We call emitTrie always at least twice and throw away the
-    # first output of it.
+    # Emit the prefixes and the offset we recorded the last time we called
+    # emitTrie. We will verify later that the offset is accurate and emit
+    # the tree again in case offsets shifted around.
     for ch in trie:
         if not len(ch) == 1:
             continue
@@ -223,6 +217,7 @@ def emitTrie(output, trie):
         offset = 0
         if "offset" in child:
             offset = child["offset"]
+        encodeChar(output, ch)
         encodeOffset(output, offset)
     if "data" in trie:
         # Emit the list of prefixes, compressed using the Huffman codes.
