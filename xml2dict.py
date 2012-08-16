@@ -174,8 +174,10 @@ def encodeString(output, s):
     for ch in s:
         output.write(codes[ch])
     output.write(codes[EndOfWord])
+def asBitString(i):
+    return bin(i).lstrip('0b')
 def encodeByte(output, b):
-    output.write(bin(b).lstrip('0b').zfill(8))
+    output.write(asBitString(b).zfill(8))
 def encodeShort(output, s):
     encodeByte(output, (s >> 8) & 0xff)
     encodeByte(output, s & 0xff)
@@ -202,7 +204,7 @@ def emitTrie(output, trie):
     flushByte(output)
     # All offsets are relative to the end of the symbol string, which
     # is followed by the offset table itself.
-    start = output.tell()
+    start = output.tell() / 8
     # Now emit the offset from the last iteration of calling emitTrie.
     # We call emitTrie always at least twice and throw away the
     # first output of it.
@@ -232,9 +234,9 @@ def emitTrie(output, trie):
         # Count the number of fixups we did.
         here = output.tell() / 8
         offset = here - start
-        if not "offset" in child or child["offset"] != here:
+        if not "offset" in child or child["offset"] != offset:
             fixup += 1
-            child["offset"] = here
+            child["offset"] = offset
         # Track whether any of our children requires emitting the file again.
         fixup += emitTrie(output, child)
     return fixup
