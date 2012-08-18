@@ -211,6 +211,7 @@ def emitTrie(output, trie):
             continue
         s += ch
     encodeString(output, s)
+    flush(output)
     # Emit the offsets with delta encoding.
     last = 0
     for ch in trie:
@@ -225,7 +226,6 @@ def emitTrie(output, trie):
         for suffix, freq in suffixes.iteritems():
             encodeString(output, suffix)
             encodeByte(output, freq)
-    encodeChar(output, EndOfList)
     flush(output)
     # Emit the child nodes of this node.
     for ch in trie:
