@@ -29,7 +29,7 @@ file.close()
 # the alphabet with frequency counts
 symbol_freq = defaultdict(int)
 EndOfWord = '*'
-EndOfPrefix = '#'
+EndOfList = '#'
 
 # the vocabulary
 vocabulary = []
@@ -72,7 +72,7 @@ def add(word, freq, flags):
     short = word[len(prefix):]
     if not prefix in index:
         index[prefix] = {}
-        symbol_freq[EndOfPrefix] += 1
+        symbol_freq[EndOfList] += 1
     if short in index[prefix]:
       index[prefix][short] += freq # combines entries if we processed word into something simpler
     else:
@@ -158,7 +158,7 @@ def buildTrie():
             ch = prefix[0:1]
             prefix = prefix[1:]
             if not ch in node:
-                node[ch] = {}
+                node[ch] = { "offset": 0 }
             node = node[ch]
         node["data"] = suffixes
     return root
@@ -167,76 +167,73 @@ def buildTrie():
 codes = buildHuffmanTable(symbol_freq)
 
 bitstring = StringIO()
+def encodeChar(output, ch):
+    output.write(codes[ch])
 def encodeString(output, s):
     for ch in s:
         output.write(codes[ch])
     output.write(codes[EndOfWord])
-def asBitString(i):
-    return bin(i).lstrip('0b')
+def encodeBits(output, bits, num):
+    output.write(bin(bits).lstrip('0b').zfill(num))
 def encodeByte(output, b):
-    output.write(asBitString(b).zfill(8))
-def encodeRawShort(output, s):
-    encodeByte(output, (s >> 8) & 0xff)
-    encodeByte(output, s & 0xff)
-def encodeShort(output, s):
-    if s > 255:
-        encodeByte(output, 255)
-        encodeRawShort(output, s)
-    else:
-        encodeByte(output, s)
-def encodeOffset(output, offset):
-    encodeShort(output, offset)
-def encodeChar(output, ch):
-    encodeShort(output, ord(ch))
-def flushByte(output):
+    encodeBits(output, b, 8)
+def encodeVLU(output, u):
+    while u >= 0x80:
+        encodeBits(output, 1, 1)
+        encodeBits(output, u & 0x7f, 7)
+        u >>= 7
+    encodeBits(output, 0, 1)
+    encodeBits(output, u, 7)
+def encodeOffset(output, o):
+    encodeVLU(output, o)
+    return
+def flush(output):
     while not output.tell() % 8 == 0:
         output.write("0")
 
 # Emit the huffman table
 def emitHuffmanTable(output, codes):
-    encodeShort(output, len(codes))
+    encodeVLU(output, len(codes))
     for ch, code in codes.iteritems():
-        encodeShort(output, ord(ch))
-        encodeByte(output, len(code))
+        encodeVLU(output, ord(ch))
+        encodeVLU(output, len(code))
     for ch, code in codes.iteritems():
         output.write(code)
+    flush(output)
 
 # Emit the trie, compressing the symbol index
 def emitTrie(output, trie):
     fixup = 0
+    # Emit the huffman encoded prefix characters first.
     s = ""
-    # All offsets are relative to the beginning of the prefix/offset table.
-    start = output.tell() / 8
-    # Emit the prefixes and the offset we recorded the last time we called
-    # emitTrie. We will verify later that the offset is accurate and emit
-    # the tree again in case offsets shifted around.
     for ch in trie:
         if not len(ch) == 1:
             continue
-        child = trie[ch]
-        offset = 0
-        if "offset" in child:
-            offset = child["offset"]
-        encodeChar(output, ch)
-        encodeOffset(output, offset)
+        s += ch
+    encodeString(output, s)
+    # Emit the offsets with delta encoding.
+    last = 0
+    for ch in trie:
+        if not len(ch) == 1:
+            continue
+        offset = trie[ch]["offset"]
+        encodeOffset(output, offset - last)
+        last = offset
     if "data" in trie:
         # Emit the list of prefixes, compressed using the Huffman codes.
         suffixes = trie["data"]
         for suffix, freq in suffixes.iteritems():
             encodeString(output, suffix)
             encodeByte(output, freq)
-    # Mark the end of the prefixes.
-    encodeString(output, EndOfPrefix)
-    flushByte(output)
+    encodeChar(output, EndOfList)
+    flush(output)
     # Emit the child nodes of this node.
     for ch in trie:
         # Ignore meta nodes like offset and data.
         if len(ch) != 1:
             continue
         child = trie[ch]
-        # Count the number of fixups we did.
-        here = output.tell() / 8
-        offset = here - start
+        offset = output.tell() / 8
         if not "offset" in child or child["offset"] != offset:
             fixup += 1
             child["offset"] = offset
@@ -249,7 +246,9 @@ trie = buildTrie()
 while True:
     bitstring = StringIO()
     emitHuffmanTable(bitstring, codes)
-    if emitTrie(bitstring, trie) == 0:
+    fixup = emitTrie(bitstring, trie)
+    print("fixups remaining: {0}, compressed size: {1}".format(fixup, bitstring.tell() / 8))
+    if fixup == 0:
         break
 
 # Write the compressed index to disk.
