@@ -198,6 +198,7 @@ def emitHuffmanTable(output, codes):
         encodeVLU(output, ord(ch))
         encodeVLU(output, len(code))
     for ch, code in codes.iteritems():
+        print(ch, code)
         output.write(code)
     flush(output)
 
