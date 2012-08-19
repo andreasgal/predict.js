@@ -1,16 +1,21 @@
-// We index at most the first 6 characters.
-var PrefixLimit = 6;
+var dict = snarf("en_us.dict", "binary");
+
+const PrefixLimit = dict[0];
 
 var LookupPrefix = (function () {
-    var dict = snarf("en_us.dict", "binary");
-    var pos = 0;
+    // Markers used to terminate prefix/offset tables.
+    const EndOfPrefixesSuffixesFollow = '#';
+    const EndOfPrefixesNoSuffixes = '&';
 
-    // Read a byte (aligned).
+    // First two bytes are the header.
+    var pos = 2;
+
+    // Read an unsigned byte.
     function getByte() {
 	return dict[pos++];
     }
 
-    // Read a variable length unsigned integer (aligned).
+    // Read a variable length unsigned integer.
     function getVLU() {
 	var u = 0
 	var shift = 0;
@@ -22,82 +27,18 @@ var LookupPrefix = (function () {
 	return u;
     }
 
-    // Read n bits from the bit stream.
-    var bits;
-    var blen = 0;
-    function getBits(n) {
-	while (blen < n) {
-	    bits <<= 8;
-	    bits |= dict[pos++];
-	    blen += 8;
-	}
-	var leftover = blen - n;
-	var result = (bits << (32 - blen)) >>> (32 - n);
-	blen = leftover;
-	return result;
-    }
-
-    // Throw away any leftover bits and skip to the next full byte.
-    function flush() {
-	blen = 0;
+    // Read a 0-terminated string.
+    function getString() {
+	var s = "";
+	var u;
+	while ((u = getVLU()) != 0)
+	    s += String.fromCharCode(u);
+	return s;
     }
 
     // Seek to a byte position in the stream.
     function seekTo(newpos) {
 	pos = newpos;
-	blen = 0;
-    }
-
-    // Read the code table.
-    var decode = (function () {
-	var numCodes = getVLU();
-	var codes = [];
-	for (var n = 0; n < numCodes; ++n) {
-	    var ch = getVLU();
-	    var len = getVLU();
-	    codes[n] = { ch: ch, len: len };
-	}
-	var decode = {};
-	for (var n = 0; n < numCodes; ++n) {
-	    var code = codes[n];
-	    var ch = code.ch;
-	    var len = code.len;
-	    var bits = getBits(len);
-	    var node = decode;
-	    var s = "";
-	    while (len--) {
-		var bit = (bits >> len) & 1;
-		s += bit
-		    var next = node[bit];
-		if (!next)
-		    next = node[bit] = {};
-		node = next;
-	    }
-	    node.ch = String.fromCharCode(ch);
-	}
-	flush();
-	return decode;
-    })();
-
-    const EndOfWord = '*';
-    const EndOfList = '#';
-
-    // Decode a string.
-    function getString() {
-	var s = "";
-	var node = decode;
-	while (true) {
-	    var bit = getBits(1);
-	    node = node[bit];
-	    var ch = node.ch;
-	    if (ch) {
-	        if (ch == EndOfWord)
-		    return s;
-		s += ch;
-		node = decode;
-	    }
-	}
-	return s;
     }
 
     // Remember the start position of the trie.
@@ -112,29 +53,40 @@ var LookupPrefix = (function () {
 	var len = prefix.length;
 	var i = 0;
 	while (true) {
-	    var p = getString();
-	    var found = (i == len);
-	    while (getBits(1)) { // As long we have more suffixes.
-		var s = getString(); // suffix
-		var f = getBits(8); // frequency
-		if (found)
-		    result.push({ word: p + s, freq: f });
+	    // If we reached the end of the prefix, skip over the prefix/offset table and
+	    // read the suffix table.
+	    if (i == len) {
+		var ch;
+		while (true) {
+		    ch = String.fromCharCode(getVLU());
+		    if (ch == EndOfPrefixesNoSuffixes) {
+			return result; // No suffixes, done.
+		    }
+		    if (ch == EndOfPrefixesSuffixesFollow) {
+			var freq;
+			while ((freq = getByte()) != 0) {
+			    var word = prefix + getString();
+			    result.push({word: word, freq: freq});
+			}
+			return result; // Done.
+		    }
+		    getVLU(); // ignore offset
+		}
 	    }
-	    if (found)
-		return result;
-	    flush();
-	    var ch = prefix[i++];
+	    var p = prefix[i++];
 	    var last = 0;
-	    var stop = p.length;
-	    var j = 0;
 	    while (true) {
+		var ch = String.fromCharCode(getVLU());
+		if (ch == EndOfPrefixesNoSuffixes ||
+		    ch == EndOfPrefixesSuffixesFollow) {
+		    // No matching branch in the trie, done.
+		    return result;
+		}
 		var offset = getVLU() + last;
-		if (p[j++] == ch) { // Matching prefix.
+		if (ch == p) { // Matching prefix, follow the branch in the trie.
 		    seekTo(offset);
 		    break;
 		}
-		if (j == stop) // No matching prefix in the list.
-		    return;
 		last = offset;
 	    }
 	}
@@ -220,9 +172,9 @@ function Codes2String(codes) {
 }
 
 function Check(input, candidates) {
-    var h = 0xcc9e2d51;
+    var h = 0;
     for (var n = 0; n < input.length; ++n) {
-        h = ((h<<5)-h) + input[n];
+        h = h * 33 + input[n];
         h = h & h;
     }
     if (IsPrefix(h)) {
@@ -374,4 +326,4 @@ function AutoCorrect(word) {
 var t = Date.now();
 for (var n = 0; n < 100; ++n)
     var result = AutoCorrect(arguments[0] || "accred");
-print((Date.now() - t) / 100 + " ms");
+    print((Date.now() - t) / 100 + " ms");

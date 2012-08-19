@@ -6,6 +6,8 @@ from StringIO import StringIO
 from collections import defaultdict
 import sys, struct, operator, heapq
 
+PrefixLimit = 6
+
 # parse command line arguments
 use = "Usage: %prog [options] dictionary.xml"
 parser = OptionParser(usage = use)
@@ -26,10 +28,6 @@ file = open(args[0])
 data = file.read()
 file.close()
 
-# the alphabet with frequency counts
-symbol_freq = defaultdict(int)
-EndOfWord = '*'
-
 # the vocabulary
 vocabulary = []
 
@@ -43,10 +41,9 @@ for i in range(BloomFilterSize):
     bf.append(0)
 
 def hash(word):
-    h = 0xcc9e2d51
-    for i in range(len(word)):
-        k = ord(word[i])
-        h = ((h<<5)-h)+k
+    h = 0
+    for ch in word:
+        h = h * 33 + ord(ch)
         h = h & h # convert to 32bit integer
     return h
 
@@ -59,14 +56,13 @@ def hasbit(word):
     return (bf[(h / 8) % BloomFilterSize] & (1 << (h % 8))) != 0
 
 def add(word, freq, flags):
-    # count the symbol frequency
-    for ch in word:
-        symbol_freq[ch] += 1
-    symbol_freq[EndOfWord] += 1
+    # frequency 0 is used to terminate lists
+    if freq < 1:
+        freq = 1
     # add to the vocabulary
     vocabulary.append([word, freq, flags])
     # add prefixes to the index
-    prefix = word[0:min(len(word), 6)]
+    prefix = word[0:min(len(word), PrefixLimit)]
     setbit(prefix)
     short = word[len(prefix):]
     if not prefix in index:
@@ -91,30 +87,13 @@ for word in words:
     text = word.childNodes[0].nodeValue
     add(text, freq, flags)
 
-# build a huffman code table for the given symbol/frequency dictionary
-def buildHuffmanTable(symbols):
-    sorted_symbols = sorted(symbols.iteritems(), key=operator.itemgetter(1))
-    trees = list()
-    for symbol, freq in sorted_symbols:
-        trees.append((freq, symbol))
-    heapq.heapify(trees)
-    while len(trees) > 1:
-        childR, childL = heapq.heappop(trees), heapq.heappop(trees)
-        parent = (childL[0] + childR[0], childL, childR)
-        heapq.heappush(trees, parent)
-
-    codes = {}
-    def buildCodeTable(tree, prefix = ''):
-        if len(tree) == 2:
-            codes[tree[1]] = prefix
-        else:
-            buildCodeTable(tree[1], prefix + '0')
-            buildCodeTable(tree[2], prefix + '1')
-    buildCodeTable(trees[0])
-    return codes
-
 # Do some statistical sanity checking:
 print("index entries: {0}".format(len(index)))
+collisions = 0
+for word in words:
+    if hasbit("x" + word.childNodes[0].nodeValue):
+        collisions += 1
+print("collisions: {0}".format(collisions))
 
 # Write the vocabulary to disk.
 output = StringIO()
@@ -161,79 +140,53 @@ def buildTrie():
         node["data"] = suffixes
     return root
 
-# Create the huffman code table we will use to compress words
-codes = buildHuffmanTable(symbol_freq)
-
-bitstring = StringIO()
-def encodeChar(output, ch):
-    output.write(codes[ch])
-def encodeString(output, s):
-    for ch in s:
-        output.write(codes[ch])
-    output.write(codes[EndOfWord])
-def encodeBits(output, bits, num):
-    output.write(bin(bits).lstrip('0b').zfill(num))
-def encodeByte(output, b):
-    encodeBits(output, b, 8)
-def encodeVLU(output, u):
+def writeByte(output, b):
+    output.write(struct.pack("B", b))
+def writeVLU(output, u):
     while u >= 0x80:
-        encodeBits(output, 1, 1)
-        encodeBits(output, u & 0x7f, 7)
+        writeByte(output, (u & 0x7f) | 0x80)
         u >>= 7
-    encodeBits(output, 0, 1)
-    encodeBits(output, u, 7)
-def encodeOffset(output, o):
-    encodeVLU(output, o)
-    return
-def flush(output):
-    while not output.tell() % 8 == 0:
-        output.write("0")
+    writeByte(output, u)
+def writeChar(output, ch):
+    writeVLU(output, ord(ch))
+def writeString(output, s):
+    for ch in s:
+        writeChar(output, ch)
+    writeVLU(output, 0)
 
-# Emit the huffman table
-def emitHuffmanTable(output, codes):
-    encodeVLU(output, len(codes))
-    for ch, code in codes.iteritems():
-        encodeVLU(output, ord(ch))
-        encodeVLU(output, len(code))
-    for ch, code in codes.iteritems():
-        output.write(code)
-    flush(output)
+EndOfPrefixesSuffixesFollow = '#'
+EndOfPrefixesNoSuffixes = '&'
 
 # Emit the trie, compressing the symbol index
 def emitTrie(output, trie):
     fixup = 0
-    # Emit the huffman encoded prefix characters first.
-    s = ""
+    last = 0
+    # Emit the prefix characters along with the delta encoded offsets.
     for ch in trie:
         if not len(ch) == 1:
             continue
-        s += ch
-    encodeString(output, s)
+        writeChar(output, ch)
+        offset = trie[ch]["offset"]
+        writeVLU(output, offset - last)
+        last = offset
     # Encode suffixes (if present).
     if "data" in trie:
-        # Emit the list of huffman encoded suffixes.
+        writeChar(output, EndOfPrefixesSuffixesFollow)
+        # Emit the list of suffixes and their frequencies.
         suffixes = trie["data"]
         for suffix, freq in suffixes.iteritems():
-            encodeBits(output, 1, 1) # Another suffix following.
-            encodeString(output, suffix)
-            encodeByte(output, freq)
-    encodeBits(output, 0, 1) # End of suffix list.
-    flush(output)
-    # Emit the offsets with delta encoding.
-    last = 0
-    for ch in trie:
-        if not len(ch) == 1:
-            continue
-        offset = trie[ch]["offset"]
-        encodeOffset(output, offset - last)
-        last = offset
+            writeByte(output, freq)
+            writeString(output, suffix)
+        writeByte(output, 0)
+    else:
+        writeChar(output, EndOfPrefixesNoSuffixes)
     # Emit the child nodes of this node.
     for ch in trie:
         # Ignore meta nodes like offset and data.
         if len(ch) != 1:
             continue
         child = trie[ch]
-        offset = output.tell() / 8
+        offset = output.tell()
         if not "offset" in child or child["offset"] != offset:
             fixup += 1
             child["offset"] = offset
@@ -244,19 +197,15 @@ def emitTrie(output, trie):
 trie = buildTrie()
 # Emit the trie until the offsets stabilize.
 while True:
-    bitstring = StringIO()
-    emitHuffmanTable(bitstring, codes)
-    fixup = emitTrie(bitstring, trie)
-    print("fixups remaining: {0}, compressed size: {1}".format(fixup, bitstring.tell() / 8))
+    output = BytesIO()
+    # Emit the selected maximum prefix limit.
+    writeByte(output, PrefixLimit)
+    fixup = emitTrie(output, trie)
+    print("fixups remaining: {0}, compressed size: {1}".format(fixup, output.tell()))
     if fixup == 0:
         break
 
 # Write the compressed index to disk.
-output = BytesIO()
-bitstring.seek(0)
-while bitstring.tell() < bitstring.len:
-    output.write(struct.pack("B", int(bitstring.read(8), 2)))
-print("compressed index size: {0} bytes".format(output.tell()))
 output.seek(0)
 f = open(options.dict + ".dict", "w")
 f.write(output.read())
