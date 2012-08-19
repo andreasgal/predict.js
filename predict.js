@@ -1,7 +1,145 @@
-eval('var dict = ' + snarf("en_us.i"));
-
 // We index at most the first 6 characters.
 var PrefixLimit = 6;
+
+var LookupPrefix = (function () {
+    var dict = snarf("en_us.dict", "binary");
+    var pos = 0;
+
+    // Read a byte (aligned).
+    function getByte() {
+	return dict[pos++];
+    }
+
+    // Read a variable length unsigned integer (aligned).
+    function getVLU() {
+	var u = 0
+	var shift = 0;
+	do {
+	    var b = dict[pos++];
+	    u |= (b & 0x7f) << shift;
+	    shift += 7;
+	} while (b & 0x80);
+	return u;
+    }
+
+    // Read n bits from the bit stream.
+    var bits;
+    var blen = 0;
+    function getBits(n) {
+	while (blen < n) {
+	    bits <<= 8;
+	    bits |= dict[pos++];
+	    blen += 8;
+	}
+	var leftover = blen - n;
+	var result = (bits << (32 - blen)) >>> (32 - n);
+	blen = leftover;
+	return result;
+    }
+
+    // Throw away any leftover bits and skip to the next full byte.
+    function flush() {
+	blen = 0;
+    }
+
+    // Seek to a byte position in the stream.
+    function seekTo(newpos) {
+	pos = newpos;
+	blen = 0;
+    }
+
+    // Read the code table.
+    var decode = (function () {
+	var numCodes = getVLU();
+	var codes = [];
+	for (var n = 0; n < numCodes; ++n) {
+	    var ch = getVLU();
+	    var len = getVLU();
+	    codes[n] = { ch: ch, len: len };
+	}
+	var decode = {};
+	for (var n = 0; n < numCodes; ++n) {
+	    var code = codes[n];
+	    var ch = code.ch;
+	    var len = code.len;
+	    var bits = getBits(len);
+	    var node = decode;
+	    var s = "";
+	    while (len--) {
+		var bit = (bits >> len) & 1;
+		s += bit
+		    var next = node[bit];
+		if (!next)
+		    next = node[bit] = {};
+		node = next;
+	    }
+	    node.ch = String.fromCharCode(ch);
+	}
+	flush();
+	return decode;
+    })();
+
+    const EndOfWord = '*';
+    const EndOfList = '#';
+
+    // Decode a string.
+    function getString() {
+	var s = "";
+	var node = decode;
+	while (true) {
+	    var bit = getBits(1);
+	    node = node[bit];
+	    var ch = node.ch;
+	    if (ch) {
+	        if (ch == EndOfWord)
+		    return s;
+		s += ch;
+		node = decode;
+	    }
+	}
+	return s;
+    }
+
+    // Remember the start position of the trie.
+    var init = pos;
+
+    return (function (prefix) {
+        var result = [];
+
+	// Rewind to the start of the trie.
+	pos = init;
+
+	var len = prefix.length;
+	var i = 0;
+	while (true) {
+	    var p = getString();
+	    var found = (i == len);
+	    while (getBits(1)) { // As long we have more suffixes.
+		var s = getString(); // suffix
+		var f = getBits(8); // frequency
+		if (found)
+		    result.push({ word: p + s, freq: f });
+	    }
+	    if (found)
+		return result;
+	    flush();
+	    var ch = prefix[i++];
+	    var last = 0;
+	    var stop = p.length;
+	    var j = 0;
+	    while (true) {
+		var offset = getVLU() + last;
+		if (p[j++] == ch) { // Matching prefix.
+		    seekTo(offset);
+		    break;
+		}
+		if (j == stop) // No matching prefix in the list.
+		    return;
+		last = offset;
+	    }
+	}
+    });
+})();
 
 var IsPrefix = (function () {
     var bf = snarf("en_us.bf", "binary");
@@ -89,11 +227,10 @@ function Check(input, candidates) {
     }
     if (IsPrefix(h)) {
         var prefix = Codes2String(input);
-        var result = dict[prefix];
+        var result = LookupPrefix(prefix);
         if (result) {
-            result = result.split(':');
             for (var n = 0; n < result.length; ++n)
-                candidates.push(prefix + result[n]);
+                candidates.push(result[n]);
         }
     }
 }
@@ -219,9 +356,9 @@ function AutoCorrect(word) {
     var frequency = 0;
     var result = word;
     for (var n = 0; n < candidates.length; ++n) {
-        var candidate = candidates[n].split('/');
-        var candidate_word = candidate[0];
-        var candidate_freq = candidate[1];
+        var candidate = candidates[n];
+        var candidate_word = candidate.word;
+        var candidate_freq = candidate.freq;
         // Calculate the distance of the word that was entered so far to the
         // same number of letters from the candidate.
         distance = LevenshteinDistance(word, candidate_word.substr(0, word.length));
@@ -238,4 +375,3 @@ var t = Date.now();
 for (var n = 0; n < 100; ++n)
     var result = AutoCorrect(arguments[0] || "accred");
 print((Date.now() - t) / 100 + " ms");
-print(result);

@@ -29,7 +29,6 @@ file.close()
 # the alphabet with frequency counts
 symbol_freq = defaultdict(int)
 EndOfWord = '*'
-EndOfList = '#'
 
 # the vocabulary
 vocabulary = []
@@ -72,7 +71,6 @@ def add(word, freq, flags):
     short = word[len(prefix):]
     if not prefix in index:
         index[prefix] = {}
-        symbol_freq[EndOfList] += 1
     if short in index[prefix]:
       index[prefix][short] += freq # combines entries if we processed word into something simpler
     else:
@@ -211,6 +209,15 @@ def emitTrie(output, trie):
             continue
         s += ch
     encodeString(output, s)
+    # Encode suffixes (if present).
+    if "data" in trie:
+        # Emit the list of huffman encoded suffixes.
+        suffixes = trie["data"]
+        for suffix, freq in suffixes.iteritems():
+            encodeBits(output, 1, 1) # Another suffix following.
+            encodeString(output, suffix)
+            encodeByte(output, freq)
+    encodeBits(output, 0, 1) # End of suffix list.
     flush(output)
     # Emit the offsets with delta encoding.
     last = 0
@@ -220,13 +227,6 @@ def emitTrie(output, trie):
         offset = trie[ch]["offset"]
         encodeOffset(output, offset - last)
         last = offset
-    if "data" in trie:
-        # Emit the list of prefixes, compressed using the Huffman codes.
-        suffixes = trie["data"]
-        for suffix, freq in suffixes.iteritems():
-            encodeString(output, suffix)
-            encodeByte(output, freq)
-    flush(output)
     # Emit the child nodes of this node.
     for ch in trie:
         # Ignore meta nodes like offset and data.
