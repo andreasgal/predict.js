@@ -1,14 +1,24 @@
 var dict = snarf("en_us.dict", "binary");
 
 const PrefixLimit = dict[0];
+const BloomFilterSize = dict[1] * 65536;
+
+var Filter = (function () {
+    var mask = BloomFilterSize - 1;
+    return (function (hash) {
+        var offset = hash >> 3;
+        var bit = hash & 7;
+        return !!(dict[2 + (offset & mask)] & (1 << bit));
+    });
+})();
 
 var LookupPrefix = (function () {
     // Markers used to terminate prefix/offset tables.
     const EndOfPrefixesSuffixesFollow = '#';
     const EndOfPrefixesNoSuffixes = '&';
 
-    // First two bytes are the header.
-    var pos = 2;
+    // Skip over the header bytes and the bloom filter data.
+    var pos = 2 + BloomFilterSize;
 
     // Read an unsigned byte.
     function getByte() {
@@ -36,6 +46,11 @@ var LookupPrefix = (function () {
 	return s;
     }
 
+    // Return the current position.
+    function tell() {
+	return pos;
+    }
+
     // Seek to a byte position in the stream.
     function seekTo(newpos) {
 	pos = newpos;
@@ -44,63 +59,65 @@ var LookupPrefix = (function () {
     // Remember the start position of the trie.
     var init = pos;
 
+    // Skip over the prefix/offset pairs and find the list of suffixes and add
+    // them to the result set.
+    function AddSuffixes(prefix, result) {
+	while (true) {
+	    var ch = String.fromCharCode(getVLU());
+	    if (ch == EndOfPrefixesNoSuffixes)
+		return result; // No suffixes, done.
+	    if (ch == EndOfPrefixesSuffixesFollow) {
+		var freq;
+		while ((freq = getByte()) != 0) {
+		    var word = prefix + getString();
+		    result.push({word: word, freq: freq});
+		}
+		return; // Done.
+	    }
+	    getVLU(); // ignore offset
+	}
+    }
+
+    // Search matching trie branches at the current position (pos) for the next
+    // character in the prefix. Keep track of the actual prefix path taken
+    // in path, since we collapse certain characters in to bloom filter
+    // (e.g. upper case/lower case). If found, follow the next prefix character
+    // if we have not reached the end of the prefix yet, otherwise add the
+    // suffixes to the result set.
+    function SearchPrefix(prefix, path, result) {
+	var p = prefix[path.length].toLowerCase();
+	var last = 0;
+	while (true) {
+	    var ch = String.fromCharCode(getVLU());
+	    if (ch == EndOfPrefixesNoSuffixes ||
+		ch == EndOfPrefixesSuffixesFollow) {
+		// No matching branch in the trie, done.
+		return;
+	    }
+	    var offset = getVLU() + last;
+	    if (ch.toLowerCase() == p) { // Matching prefix, follow the branch in the trie.
+		var saved = tell();
+		seekTo(offset);
+		var path2 = path + ch;
+		if (path2.length == prefix.length)
+		    AddSuffixes(path2, result);
+		else
+		    SearchPrefix(prefix, path2, result);
+		seekTo(saved);
+	    }
+	    last = offset;
+	}
+    }
+
     return (function (prefix) {
         var result = [];
 
 	// Rewind to the start of the trie.
 	pos = init;
 
-	var len = prefix.length;
-	var i = 0;
-	while (true) {
-	    // If we reached the end of the prefix, skip over the prefix/offset table and
-	    // read the suffix table.
-	    if (i == len) {
-		var ch;
-		while (true) {
-		    ch = String.fromCharCode(getVLU());
-		    if (ch == EndOfPrefixesNoSuffixes) {
-			return result; // No suffixes, done.
-		    }
-		    if (ch == EndOfPrefixesSuffixesFollow) {
-			var freq;
-			while ((freq = getByte()) != 0) {
-			    var word = prefix + getString();
-			    result.push({word: word, freq: freq});
-			}
-			return result; // Done.
-		    }
-		    getVLU(); // ignore offset
-		}
-	    }
-	    var p = prefix[i++];
-	    var last = 0;
-	    while (true) {
-		var ch = String.fromCharCode(getVLU());
-		if (ch == EndOfPrefixesNoSuffixes ||
-		    ch == EndOfPrefixesSuffixesFollow) {
-		    // No matching branch in the trie, done.
-		    return result;
-		}
-		var offset = getVLU() + last;
-		if (ch == p) { // Matching prefix, follow the branch in the trie.
-		    seekTo(offset);
-		    break;
-		}
-		last = offset;
-	    }
-	}
-    });
-})();
+	SearchPrefix(prefix, "", result);
 
-var IsPrefix = (function () {
-    var bf = snarf("en_us.bf", "binary");
-    var len = bf.length;
-    var mask = len - 1;
-    return (function (hash) {
-        var offset = hash >> 3;
-        var bit = hash & 7;
-        return !!(bf[offset & mask] & (1 << bit));
+	return result;
     });
 })();
 
@@ -172,12 +189,16 @@ function Codes2String(codes) {
 }
 
 function Check(input, candidates) {
-    var h = 0;
+    var h1 = 0;
+    var h2 = 0xdeadbeef;
     for (var n = 0; n < input.length; ++n) {
-        h = h * 33 + input[n];
-        h = h & h;
+	var ch = input[n];
+        h1 = h1 * 33 + ch;
+        h1 = h1 & 0xffffffff;
+        h2 = h2 * 73 ^ ch;
+	h2 = h2 & 0xffffffff;
     }
-    if (IsPrefix(h)) {
+    if (Filter(h1) && Filter(h2)) {
         var prefix = Codes2String(input);
         var result = LookupPrefix(prefix);
         if (result) {
@@ -306,7 +327,7 @@ function AutoCorrect(word) {
     // actual input.
     var minimum = Infinity;
     var frequency = 0;
-    var result = word;
+    var result = "";
     for (var n = 0; n < candidates.length; ++n) {
         var candidate = candidates[n];
         var candidate_word = candidate.word;
@@ -325,5 +346,6 @@ function AutoCorrect(word) {
 
 var t = Date.now();
 for (var n = 0; n < 100; ++n)
-    var result = AutoCorrect(arguments[0] || "accred");
-    print((Date.now() - t) / 100 + " ms");
+    var result = AutoCorrect(arguments[0] || "door");
+print((Date.now() - t) / 100 + " ms");
+print(result);

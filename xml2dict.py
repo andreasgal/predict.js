@@ -35,25 +35,37 @@ vocabulary = []
 index = {}
 
 # the in-memory bloom filter
-BloomFilterSize = 512*1024
+BloomFilterSize = 256*1024
 bf = array('B')
 for i in range(BloomFilterSize):
     bf.append(0)
 
-def hash(word):
+def hash1(word):
     h = 0
     for ch in word:
         h = h * 33 + ord(ch)
-        h = h & h # convert to 32bit integer
+        h = h & 0xffffffff
     return h
 
-def setbit(word):
-    h = hash(word)
+def hash2(word):
+    h = 0xdeadbeef
+    for ch in word:
+        h = h * 73 ^ ord(ch)
+        h = h & 0xffffffff
+    return h
+
+def setbit(h):
     bf[(h / 8) % BloomFilterSize] |= (1 << (h % 8))
 
-def hasbit(word):
-    h = hash(word)
+def hasbit(h):
     return (bf[(h / 8) % BloomFilterSize] & (1 << (h % 8))) != 0
+
+def mark(word):
+    setbit(hash1(word))
+    setbit(hash2(word))
+
+def ismarked(word):
+    return hasbit(hash1(word)) and hasbit(hash2(word))
 
 def add(word, freq, flags):
     # frequency 0 is used to terminate lists
@@ -63,14 +75,15 @@ def add(word, freq, flags):
     vocabulary.append([word, freq, flags])
     # add prefixes to the index
     prefix = word[0:min(len(word), PrefixLimit)]
-    setbit(prefix)
-    short = word[len(prefix):]
+    mark(prefix.lower())
+    suffix = word[len(prefix):]
     if not prefix in index:
         index[prefix] = {}
-    if short in index[prefix]:
-      index[prefix][short] += freq # combines entries if we processed word into something simpler
+    # combines entries if we processed word into something simpler
+    if suffix in index[prefix]:
+      index[prefix][suffix] = max(freq, index[prefix][suffix])
     else:
-      index[prefix][short] = freq
+      index[prefix][suffix] = freq
 
 # go through the dictionary and build the trie
 dom = parseString(data)
@@ -91,7 +104,7 @@ for word in words:
 print("index entries: {0}".format(len(index)))
 collisions = 0
 for word in words:
-    if hasbit("x" + word.childNodes[0].nodeValue):
+    if ismarked("x" + word.childNodes[0].nodeValue):
         collisions += 1
 print("collisions: {0}".format(collisions))
 
@@ -115,15 +128,6 @@ print("index size: {0} words, {1} bytes".format(len(index), output.tell()))
 output.seek(0)
 f = open(options.dict + ".i", "w")
 f.write(output.read().encode("utf-8"))
-f.close()
-
-# Write the bloom filter for the index
-output = BytesIO()
-for b in bf:
-    output.write(struct.pack("B", b))
-output.seek(0)
-f = open(options.dict + ".bf", "w")
-f.write(output.read())
 f.close()
 
 # Create a trie that we will use to look up prefixes
@@ -200,6 +204,12 @@ while True:
     output = BytesIO()
     # Emit the selected maximum prefix limit.
     writeByte(output, PrefixLimit)
+    # Emit the size of the bloom filter.
+    writeByte(output, BloomFilterSize / 65536)
+    # Emit the bloom filter itself.
+    for b in bf:
+        output.write(struct.pack("B", b))
+    # Finally, emit the trie.
     fixup = emitTrie(output, trie)
     print("fixups remaining: {0}, compressed size: {1}".format(fixup, output.tell()))
     if fixup == 0:
