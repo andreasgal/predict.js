@@ -12,14 +12,14 @@ PrefixLimit = 6
 use = "Usage: %prog [options] dictionary.xml"
 parser = OptionParser(usage = use)
 parser.add_option("-v", "--verbose", dest="verbose", action="store_true", default=False, help="Set mode to verbose.")
-parser.add_option("-d", "--output-dictionary", dest="dict", metavar="FILE", help="write dictionary output to FILE")
+parser.add_option("-o", "--output", dest="output", metavar="FILE", help="write output to FILE")
 options, args = parser.parse_args()
 
 # we expect the dictionary name to be present
 if len(args) < 1:
     print("Missing dictionary name.")
     exit(-1)
-if options.dict == None:
+if options.output == None:
     print("Missing output file.")
     exit(-1)
 
@@ -108,27 +108,27 @@ for word in words:
         collisions += 1
 print("collisions: {0}".format(collisions))
 
-# Write the vocabulary to disk.
-output = StringIO()
-for word, freq, flags in vocabulary:
-    output.write(word + " " + str(freq) + " " + flags + "\n")
-print("vocabulary size: {0} words, {1} bytes".format(len(vocabulary), output.tell()))
-output.seek(0)
-f = open(options.dict + ".dict", "w")
-f.write(output.read().encode("utf-8"))
-f.close()
+# If verbose mode was requested, write the vocabulary and index to separate files.
+if options.verbose:
+    output = StringIO()
+    for word, freq, flags in vocabulary:
+        output.write(word + " " + str(freq) + " " + flags + "\n")
+    print("vocabulary size: {0} words, {1} bytes".format(len(vocabulary), output.tell()))
+    output.seek(0)
+    f = open(options.output + ".words", "w")
+    f.write(output.read().encode("utf-8"))
+    f.close()
 
-# Write the index to disk
-output = StringIO()
-output.write('{\n')
-for key, word in index.iteritems():
-    output.write('"' + key + '": "' + ':'.join([short + '/' + str(word[short]) for short in word]) + '",\n')
-output.write('}\n')
-print("index size: {0} words, {1} bytes".format(len(index), output.tell()))
-output.seek(0)
-f = open(options.dict + ".i", "w")
-f.write(output.read().encode("utf-8"))
-f.close()
+    output = StringIO()
+    output.write('{\n')
+    for key, word in index.iteritems():
+        output.write('"' + key + '": "' + ':'.join([short + '/' + str(word[short]) for short in word]) + '",\n')
+    output.write('}\n')
+    print("index size: {0} words, {1} bytes".format(len(index), output.tell()))
+    output.seek(0)
+    f = open(options.output + ".index", "w")
+    f.write(output.read().encode("utf-8"))
+    f.close()
 
 # Create a trie that we will use to look up prefixes
 def buildTrie():
@@ -217,6 +217,6 @@ while True:
 
 # Write the compressed index to disk.
 output.seek(0)
-f = open(options.dict + ".dict", "w")
+f = open(options.output, "w")
 f.write(output.read())
 f.close()
